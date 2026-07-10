@@ -1,3 +1,4 @@
+from .client import SupermemoryClient
 from .schemas import (
     EventMemory,
     LessonMemory,
@@ -9,6 +10,7 @@ from .schemas import (
 )
 
 __all__ = [
+    "SupermemoryClient",
     "MemoryType",
     "Outcome",
     "Side",
