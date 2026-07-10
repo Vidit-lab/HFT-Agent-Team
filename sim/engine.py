@@ -103,12 +103,17 @@ class BacktestEngine:
 
     def mark_to_market(self, timestamp: datetime, prices: dict[str, float]) -> Portfolio:
         self._last_price.update(prices)
-        unrealized = sum(
-            (self._last_price[symbol] - pos.avg_entry_price) * pos.size
+        # equity = cash + market value of open positions. `cash` already
+        # reflects the money spent acquiring them, so this must be the
+        # position's current market value (price * size), not unrealized PnL
+        # alone -- adding just the PnL on top of cash would double-subtract
+        # the cost basis.
+        market_value = sum(
+            self._last_price[symbol] * pos.size
             for symbol, pos in self._positions.items()
             if pos.size != 0 and symbol in self._last_price
         )
-        equity = self.cash + unrealized
+        equity = self.cash + market_value
         self._peak_equity = max(self._peak_equity, equity)
         drawdown = (self._peak_equity - equity) / self._peak_equity if self._peak_equity > 0 else 0.0
 
