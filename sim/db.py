@@ -19,4 +19,7 @@ def init_db(engine) -> None:
 
 
 def get_session(engine) -> Session:
-    return Session(engine)
+    # expire_on_commit=False: callers commonly read a row's fields (e.g. a
+    # freshly-persisted BacktestResult) right after commit(), once the `with`
+    # block -- and the session -- has already closed.
+    return Session(engine, expire_on_commit=False)
