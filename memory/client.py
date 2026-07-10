@@ -12,6 +12,8 @@ import os
 from typing import Any, Literal
 
 from supermemory import Supermemory
+from supermemory.types.document_get_response import DocumentGetResponse
+from supermemory.types.document_list_response import DocumentListResponse
 from supermemory.types.search_memories_params import Filters
 from supermemory.types.search_memories_response import SearchMemoriesResponse
 from supermemory.types.setting_get_response import SettingGetResponse
@@ -119,3 +121,18 @@ class SupermemoryClient:
 
     def document_status(self, document_id: str) -> str:
         return self._sdk.documents.get(id=document_id).status
+
+    def list_documents(self, limit: int = 50, include_content: bool = True) -> DocumentListResponse:
+        """List raw documents in this container -- id, status, metadata, and
+        (if include_content) the stored text. Chunk-level embeddings themselves
+        aren't exposed by the API (they're internal to the search engine); this
+        is the practical observability surface for "what did we actually store."
+        """
+        return self._sdk.documents.list(
+            container_tags=[self.container_tag],
+            limit=limit,
+            include_content=include_content,
+        )
+
+    def get_document(self, document_id: str) -> DocumentGetResponse:
+        return self._sdk.documents.get(id=document_id)
