@@ -127,6 +127,12 @@ trading-brain/
   > "Entered long BTC on momentum breakout during high-volatility bull regime; exited +3.2% after RSI divergence signal. Lesson: momentum entries after 3+ consecutive green candles in high-vol regimes had strong follow-through this cycle."
 - `/v3/settings.filterPrompt` configured early to constrain what the engine bothers extracting (avoid noise memories).
 
+### Operational notes: the self-hosted memory-agent (updated Phase 6)
+- The self-hosted binary's memory-agent (server-side LLM fact extraction/consolidation) was broken from Phase 0 through v0.0.3 regardless of provider (native `GROQ_API_KEY`, or `OPENAI_BASE_URL` pointed at Groq's compatible endpoint) — every document sat at `status: "failed"` with no diagnosable error (closed-source binary).
+- **As of v0.0.5, it works**, using the native `GROQ_API_KEY` provider path *only* — no `OPENAI_BASE_URL`/`OPENAI_MODEL` override alongside it. Mixing the native-provider env var with the generic OpenAI-compatible override is the likely cause of the earlier failures. Upgrading requires a fresh data directory (an in-place `upgrade` on old data broke API-key auth entirely; recovered by re-initializing and treating the old container as historical/unrecoverable via the API).
+- Even with the memory-agent working, `query_similar()`'s metadata filters are **not exhaustive** — empirically, filters apply within a semantically-ranked candidate subset, not the full corpus (a document can match a filter's metadata perfectly and still be excluded if it doesn't rank in the initial similarity pass for that query's text). `list_documents()` is exhaustive; `query_similar()` isn't. `agents/researcher.retrieve_memories()` mitigates this by always merging a filtered query with an unfiltered semantic query rather than only falling back when the filtered result is fully empty.
+- Search results are **chunk-level**: `result.id` is a chunk id in a different namespace from the document id `write_lesson()`/`write_trade_memory()` return (`get_document(result.id)` 404s). The actual parent document id is `result.documents[0].id` — use `agents.researcher.document_id()` for anything that needs to trace a retrieval back to a specific write (the reasoning trail's `retrieved_memory_ids`).
+
 ---
 
 ## 4. Phased roadmap
@@ -190,6 +196,7 @@ don't proceed to the next phase until DoD is met and demoed.
 - Next cycle's `query_similar()` calls surface these lessons into decision prompts — closing decide → act → observe → reflect → remember → retrieve.
 - Framing note for docs/README: this is *inspired by* the self-improving-agent lineage (Reflexion's verbal self-feedback, Voyager's growing skill library) — there is no single canonical "Karpathy autoresearch paper" to cite; describe it honestly as inspired-by, not attributed.
 - **DoD**: run the same market window twice; on the second pass, decisions demonstrably reference lessons written during the first pass (visible in logs/reasoning trail).
+- **Done**: `agents/reflection.py` computes outcome (win/loss/neutral) deterministically from realized or forward return — never asked of the LLM — and diagnoses cause + writes the lesson. `agents/reflection_loop.py` batches eligible trades (closed, or aged past a lookback window) on demand via `POST /api/reflect`, decoupled from `run_cycle`'s hot path. Validated with a 13-cycle, 6-month AAPL stress test: 4 trades reflected on, 4 lessons written, and a follow-up cycle's Bull researcher cited 2 of them by verified document id (see §3's operational notes for the chunk-id/document-id distinction this required fixing).
 
 ### Phase 7 — Live dashboard (~5–7 days)
 **Goal**: the front-facing product.
