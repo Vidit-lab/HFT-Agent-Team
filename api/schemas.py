@@ -134,6 +134,11 @@ class RunCycleRequest(BaseModel):
     as_of: str | None = Field(default=None, description="YYYY-MM-DD, defaults to today")
 
 
+class NodeTraceOut(BaseModel):
+    node: str
+    output: str
+
+
 class RunCycleOut(BaseModel):
     run_id: str
     symbol: str
@@ -141,8 +146,11 @@ class RunCycleOut(BaseModel):
     size: float
     rationale: str
     confidence: float
+    regime: str
+    regime_summary: str
     trade_id: int | None
     executed_price: float | None
     equity: float
     memories_considered: int
     memory_write_id: str | None
+    reasoning_trail: list[NodeTraceOut]

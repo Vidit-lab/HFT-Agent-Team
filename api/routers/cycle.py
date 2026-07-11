@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from agents.orchestrator import run_cycle
 from api.deps import get_memory_client, get_session
-from api.schemas import RunCycleOut, RunCycleRequest
+from api.schemas import NodeTraceOut, RunCycleOut, RunCycleRequest
 from memory.client import SupermemoryClient
 
 router = APIRouter(prefix="/api/run-cycle", tags=["cycle"])
@@ -39,9 +39,14 @@ def run_cycle_endpoint(
         size=result.decision.size,
         rationale=result.decision.rationale,
         confidence=result.decision.confidence,
+        regime=result.market_analysis.regime.value,
+        regime_summary=result.market_analysis.summary,
         trade_id=result.trade.id if result.trade else None,
         executed_price=result.trade.price if result.trade else None,
         equity=result.snapshot.equity,
         memories_considered=result.memories_considered,
         memory_write_id=result.memory_write_id,
+        reasoning_trail=[
+            NodeTraceOut(node=entry["node"], output=entry["raw_output"]) for entry in result.reasoning_trail
+        ],
     )

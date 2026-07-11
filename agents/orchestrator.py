@@ -1,9 +1,12 @@
-"""Phase 4's whole spine: decide -> act -> remember, in one function.
+"""Phase 5's spine: retrieve -> multi-agent graph -> execute -> persist ->
+remember. Replaces Phase 4's single-agent `agent_decide` call with the
+LangGraph-based agent graph (agents/graph.py): Market Analyst -> parallel
+Bull/Bear -> Risk Manager (approve/veto) -> Trader -> Portfolio Manager.
 
-query memory -> agent decides -> sim/engine executes -> ledger persists ->
-outcome written back to memory. This is deliberately the only place that
-touches agents/, sim/, and memory/ all at once -- everything upstream of
-this file is a clean, independently-testable layer.
+This remains the only place that touches agents/, sim/, and memory/ all at
+once -- every node upstream of this file is a clean, independently
+testable function, and every write to Supermemory (regime snapshot, trade
+outcome) happens here, after the graph has produced a final decision.
 """
 
 from __future__ import annotations
@@ -14,10 +17,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
-from agents.schemas import Action, TradeDecision
-from agents.trader import decide as agent_decide
+from agents.graph import build_graph
+from agents.schemas import Action, MarketAnalysis, TradeDecision
 from memory.client import SupermemoryClient
 from memory.schemas import Outcome as MemoryOutcome
+from memory.schemas import RegimeSnapshotMemory
 from memory.schemas import Side as MemorySide
 from memory.schemas import TradeMemory
 from sim.data_loader import load_ohlcv
@@ -33,11 +37,13 @@ class CycleResult:
     run_id: str
     symbol: str
     decision: TradeDecision
+    market_analysis: MarketAnalysis
     trade: Trade | None
     snapshot: Portfolio
     memories_considered: int
     memory_write_id: str | None
     decision_log_id: int | None
+    reasoning_trail: list[dict]
 
 
 def run_cycle(
@@ -61,14 +67,32 @@ def run_cycle(
     ).first()
     current_size = existing_position.size if existing_position else 0.0
 
-    retrieved = memory_client.query_similar(f"lessons and past trades for {symbol}", limit=5)
+    latest_snapshot = session.exec(
+        select(Portfolio).where(Portfolio.run_id == run_id).order_by(Portfolio.timestamp.desc()).limit(1)
+    ).first()
+    cash = latest_snapshot.cash if latest_snapshot else initial_cash
+    equity = latest_snapshot.equity if latest_snapshot else initial_cash
 
-    decision, system_prompt, user_prompt = agent_decide(
-        symbol, bars, retrieved.results, current_position_size=current_size, client=llm_client
+    current_bar = bars.iloc[-1]
+
+    graph = build_graph(memory_client, llm_client)
+    final_state = graph.invoke(
+        {
+            "symbol": symbol,
+            "bars": bars,
+            "current_position_size": current_size,
+            "current_price": current_bar.close,
+            "cash": cash,
+            "equity": equity,
+            "reasoning_trail": [],
+        }
     )
 
-    engine = BacktestEngine.resume_or_create(session, run_id=run_id, strategy="agent_v1", initial_cash=initial_cash)
-    current_bar = bars.iloc[-1]
+    decision: TradeDecision = final_state["trade_decision"]
+    market_analysis: MarketAnalysis = final_state["market_analysis"]
+    reasoning_trail: list[dict] = final_state["reasoning_trail"]
+
+    engine = BacktestEngine.resume_or_create(session, run_id=run_id, strategy="agent_graph_v1", initial_cash=initial_cash)
 
     signal = None
     if decision.action == Action.BUY and decision.size > 0:
@@ -77,22 +101,35 @@ def run_cycle(
         signal = Signal(timestamp=current_bar.timestamp, symbol=symbol, side=SimSide.SELL, size=decision.size)
 
     trade, snapshot = engine.step(current_bar.timestamp, symbol, current_bar.close, signal)
+    if trade is not None:
+        trade.regime_at_entry = market_analysis.regime.value
+        trade.rationale_summary = decision.rationale
     engine.persist(session)
 
+    memory_ids = sorted({mid for entry in reasoning_trail for mid in entry["retrieved_memory_ids"]})
     log = AgentDecisionLog(
         run_id=run_id,
         timestamp=current_bar.timestamp,
         symbol=symbol,
         action=decision.action.value,
+        regime=market_analysis.regime.value,
         trade_id=trade.id if trade else None,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
         raw_decision_json=decision.model_dump_json(),
-        retrieved_memory_ids=json.dumps([r.id for r in retrieved.results]),
+        reasoning_trail_json=json.dumps(reasoning_trail),
+        retrieved_memory_ids=json.dumps(memory_ids),
     )
     session.add(log)
     session.commit()
     session.refresh(log)
+
+    memory_client.write_regime_snapshot(
+        RegimeSnapshotMemory(
+            timestamp=current_bar.timestamp,
+            regime=market_analysis.regime.value,
+            asset=symbol,
+            summary=market_analysis.summary,
+        )
+    )
 
     memory_write_id = None
     if trade is not None:
@@ -108,8 +145,8 @@ def run_cycle(
                 side=MemorySide.BUY if trade.side == SimSide.BUY else MemorySide.SELL,
                 size=trade.size,
                 price=trade.price,
-                strategy="agent_v1",
-                regime="unclassified",  # regime classification arrives in Phase 5's Market Analyst
+                strategy="agent_graph_v1",
+                regime=market_analysis.regime.value,
                 outcome=memory_outcome,
                 pnl=trade.realized_pnl or 0.0,
                 rationale=decision.rationale,
@@ -120,9 +157,11 @@ def run_cycle(
         run_id=run_id,
         symbol=symbol,
         decision=decision,
+        market_analysis=market_analysis,
         trade=trade,
         snapshot=snapshot,
-        memories_considered=len(retrieved.results),
+        memories_considered=len(memory_ids),
         memory_write_id=memory_write_id,
         decision_log_id=log.id,
+        reasoning_trail=reasoning_trail,
     )

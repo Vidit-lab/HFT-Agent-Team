@@ -74,18 +74,20 @@ class Portfolio(SQLModel, table=True):
 class AgentDecisionLog(SQLModel, table=True):
     """Every agent decision, whether or not it became a trade -- a "hold" has
     no Trade row to attach reasoning to, so this is its own table. Captures
-    exactly what the agent saw (both prompts, which memories were retrieved)
-    and what it said, for the reasoning trail Phase 5+ builds on."""
+    the full multi-agent reasoning trail (one entry per graph node: Market
+    Analyst, Researcher Bull/Bear, Risk Manager, Trader, Portfolio Manager)
+    as JSON, plus the final decision and every memory id retrieved along
+    the way -- the visible reasoning trail Phase 5's DoD calls for."""
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(index=True)
     timestamp: datetime
     symbol: str
     action: str
+    regime: str | None = Field(default=None, index=True)
     trade_id: int | None = Field(default=None, foreign_key="trade.id")
-    system_prompt: str
-    user_prompt: str
     raw_decision_json: str
+    reasoning_trail_json: str = "[]"
     retrieved_memory_ids: str = "[]"
 
 
