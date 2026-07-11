@@ -8,6 +8,7 @@ store. Single-round: each produces exactly one thesis, no rebuttal.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 from openai import OpenAI
 from pydantic import ValidationError
@@ -16,7 +17,16 @@ from agents.formatting import format_market_state, format_memories
 from agents.llm import DEFAULT_MODEL, complete_json, get_client
 from agents.schemas import MarketAnalysis, ResearchThesis, Stance
 from memory.client import SupermemoryClient, and_filters
-from supermemory.types.search_memories_response import SearchMemoriesResponse
+
+
+@dataclass
+class RetrievedMemories:
+    """Duck-typed to match the one thing callers of retrieve_memories() need
+    (`.results`) without depending on SupermemoryClient's SDK response type,
+    since this is a merge of two separate query_similar() calls, not a
+    single SDK response we can copy."""
+
+    results: list
 
 _MANDATE = {
     Stance.BULL: (
@@ -57,18 +67,38 @@ def build_prompt(
     )
 
 
+def document_id(result) -> str:
+    """Search results are chunk-level (`result.id` is a chunk id in its own
+    namespace -- calling get_document() on it 404s); `result.documents[0].id`
+    is the actual parent document id, i.e. what write_lesson()/
+    write_trade_memory() returned when it was written. Anything meant to be
+    traceable back to a specific write (the reasoning trail's
+    retrieved_memory_ids) must use this, not result.id directly. Falls back
+    to result.id for lightweight test doubles that don't model `.documents`."""
+    documents = getattr(result, "documents", None)
+    return documents[0].id if documents else result.id
+
+
 def retrieve_memories(
     memory_client: SupermemoryClient, symbol: str, stance: Stance, limit: int = 5
-) -> SearchMemoriesResponse:
-    """Bull is biased toward past wins, Bear toward past losses. Falls back to
-    an unfiltered query when the outcome-filtered search comes up empty (a
-    cold memory store shouldn't starve the debate of any context at all)."""
+) -> RetrievedMemories:
+    """Bull is biased toward past wins, Bear toward past losses. Merges the
+    outcome-filtered results with an unfiltered semantic search rather than
+    only falling back when the filtered query comes back fully empty --
+    Supermemory's metadata-filter index can momentarily lag a just-written
+    document even once it reaches status=done for chunk-level search, so a
+    filtered query returning *some* but not all matches would otherwise
+    silently starve the debate of recent, relevant memory. Filtered results
+    are ranked first (more precisely on-topic); unfiltered results fill any
+    remaining slots, deduped by id."""
     outcome = "win" if stance == Stance.BULL else "loss"
     q = f"{'bullish' if stance == Stance.BULL else 'bearish'} lessons and past trades for {symbol}"
-    result = memory_client.query_similar(q, filters=and_filters(asset=symbol, outcome=outcome), limit=limit)
-    if not result.results:
-        result = memory_client.query_similar(q, limit=limit)
-    return result
+    filtered = memory_client.query_similar(q, filters=and_filters(asset=symbol, outcome=outcome), limit=limit)
+    unfiltered = memory_client.query_similar(q, limit=limit)
+
+    seen_ids = {r.id for r in filtered.results}
+    merged = list(filtered.results) + [r for r in unfiltered.results if r.id not in seen_ids]
+    return RetrievedMemories(results=merged[:limit])
 
 
 def research(

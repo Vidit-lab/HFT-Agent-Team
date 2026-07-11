@@ -70,7 +70,7 @@ def _researcher_node(stance: Stance, memory_client: SupermemoryClient, client: O
             client=client,
             model=model,
         )
-        memory_ids = [r.id for r in retrieval.results]
+        memory_ids = [researcher.document_id(r) for r in retrieval.results]
         return {
             state_key: thesis,
             "reasoning_trail": [_trace(f"researcher_{stance.value}", sp, up, thesis.model_dump_json(), memory_ids)],
