@@ -154,3 +154,26 @@ class RunCycleOut(BaseModel):
     memories_considered: int
     memory_write_id: str | None
     reasoning_trail: list[NodeTraceOut]
+
+
+class ReflectRequest(BaseModel):
+    run_id: str | None = Field(default=None, description="Restrict to one run; defaults to all runs")
+    max_trades: int = Field(default=10, ge=1, le=100)
+    lookback_days: int = Field(default=5, ge=0, description="Days before an open trade is evaluated on forward return")
+    as_of: str | None = Field(default=None, description="YYYY-MM-DD, defaults to today")
+
+
+class ReflectionOut(BaseModel):
+    trade_id: int
+    symbol: str
+    outcome: str
+    return_pct: float
+    diagnosis: str
+    lesson_text: str
+    lesson_memory_id: str
+    confidence: float
+
+
+class ReflectOut(BaseModel):
+    reflected_count: int
+    reflections: list[ReflectionOut]
