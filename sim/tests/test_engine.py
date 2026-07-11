@@ -61,3 +61,76 @@ def test_run_processes_every_bar_and_every_signal(synthetic_bars):
     assert len(engine.portfolio_snapshots) == len(synthetic_bars)
     assert len(engine.trades) == len(signals)
     assert len(signals) > 0  # sanity: the fixture should actually trigger crossovers
+
+
+def test_step_is_equivalent_to_process_signal_plus_mark_to_market():
+    engine = BacktestEngine(run_id="t6", strategy="test", initial_cash=10_000.0, fee_bps=0, slippage_bps=0)
+    signal = Signal(timestamp=_ts(2), symbol="AAPL", side=Side.BUY, size=10)
+
+    trade, snapshot = engine.step(_ts(2), "AAPL", 100.0, signal)
+
+    assert trade is not None
+    assert trade.price == 100.0
+    assert snapshot.equity == pytest.approx(10_000.0)  # bought at mark price, no fee/slippage -> equity unchanged
+
+
+def test_step_with_no_signal_only_marks_to_market():
+    engine = BacktestEngine(run_id="t7", strategy="test", initial_cash=10_000.0)
+    trade, snapshot = engine.step(_ts(2), "AAPL", 100.0, signal=None)
+
+    assert trade is None
+    assert snapshot.cash == 10_000.0
+    assert snapshot.equity == 10_000.0
+
+
+def test_resume_or_create_starts_fresh_when_run_id_is_new(db_session):
+    engine = BacktestEngine.resume_or_create(db_session, run_id="new-run", strategy="test", initial_cash=5_000.0)
+    assert engine.cash == 5_000.0
+    assert engine._positions == {}
+
+
+def test_resume_or_create_rehydrates_state_from_db(db_session):
+    run_id = "resume-run"
+    first = BacktestEngine.resume_or_create(db_session, run_id=run_id, strategy="test", initial_cash=10_000.0)
+    first.step(_ts(2), "AAPL", 100.0, Signal(timestamp=_ts(2), symbol="AAPL", side=Side.BUY, size=10))
+    first.persist(db_session)
+
+    # a brand new engine instance, as if a fresh request/process
+    second = BacktestEngine.resume_or_create(db_session, run_id=run_id, strategy="test", initial_cash=10_000.0)
+    assert second.cash == pytest.approx(first.cash)
+    assert second._positions["AAPL"].size == 10
+
+
+def test_repeated_cycles_upsert_position_not_duplicate_rows(db_session):
+    from sqlmodel import select
+
+    from sim.models import Position
+
+    run_id = "upsert-run"
+    for day, price in [(2, 100.0), (3, 105.0), (4, 110.0)]:
+        engine = BacktestEngine.resume_or_create(db_session, run_id=run_id, strategy="test", initial_cash=10_000.0)
+        signal = Signal(timestamp=_ts(day), symbol="AAPL", side=Side.BUY, size=1)
+        engine.step(_ts(day), "AAPL", price, signal)
+        engine.persist(db_session)
+
+    positions = db_session.exec(select(Position).where(Position.run_id == run_id)).all()
+    assert len(positions) == 1  # not 3 -- upserted each cycle
+    assert positions[0].size == 3
+
+
+def test_position_row_removed_once_fully_closed(db_session):
+    from sqlmodel import select
+
+    from sim.models import Position
+
+    run_id = "close-run"
+    engine = BacktestEngine.resume_or_create(db_session, run_id=run_id, strategy="test", initial_cash=10_000.0)
+    engine.step(_ts(2), "AAPL", 100.0, Signal(timestamp=_ts(2), symbol="AAPL", side=Side.BUY, size=5))
+    engine.persist(db_session)
+
+    engine2 = BacktestEngine.resume_or_create(db_session, run_id=run_id, strategy="test", initial_cash=10_000.0)
+    engine2.step(_ts(3), "AAPL", 110.0, Signal(timestamp=_ts(3), symbol="AAPL", side=Side.SELL, size=5))
+    engine2.persist(db_session)
+
+    positions = db_session.exec(select(Position).where(Position.run_id == run_id)).all()
+    assert positions == []

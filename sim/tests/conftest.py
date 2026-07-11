@@ -6,6 +6,9 @@ import math
 
 import pandas as pd
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
+from sim import models  # noqa: F401 -- registers table metadata
 
 
 def make_synthetic_bars(n: int = 120, start_price: float = 100.0) -> pd.DataFrame:
@@ -32,3 +35,11 @@ def make_synthetic_bars(n: int = 120, start_price: float = 100.0) -> pd.DataFram
 @pytest.fixture
 def synthetic_bars() -> pd.DataFrame:
     return make_synthetic_bars()
+
+
+@pytest.fixture
+def db_session(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path}/test.db")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        yield session
