@@ -10,10 +10,11 @@ equity curve.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 import pandas as pd
+from sqlmodel import func, select
 
 from sim.models import Portfolio, Position, Side, Signal, Trade
 
@@ -47,6 +48,42 @@ class BacktestEngine:
 
         self.trades: list[Trade] = []
         self.portfolio_snapshots: list[Portfolio] = []
+
+    @classmethod
+    def resume_or_create(
+        cls,
+        session,
+        run_id: str,
+        strategy: str,
+        initial_cash: float,
+        *,
+        fee_bps: float = 10.0,
+        slippage_bps: float = 5.0,
+    ) -> "BacktestEngine":
+        """Rehydrate engine state from the DB for `run_id` if it already has
+        history, otherwise start fresh. Used for live/paper cycles, where each
+        call is a fresh process/request and the ledger -- not any in-memory
+        object -- is the source of truth for what happened before."""
+        engine = cls(
+            run_id=run_id, strategy=strategy, initial_cash=initial_cash, fee_bps=fee_bps, slippage_bps=slippage_bps
+        )
+
+        latest_snapshot = session.exec(
+            select(Portfolio).where(Portfolio.run_id == run_id).order_by(Portfolio.timestamp.desc()).limit(1)
+        ).first()
+        if latest_snapshot is None:
+            return engine  # first cycle for this run_id
+
+        engine.cash = latest_snapshot.cash
+        max_equity = session.exec(select(func.max(Portfolio.equity)).where(Portfolio.run_id == run_id)).one()
+        engine._peak_equity = max(initial_cash, max_equity or initial_cash)
+
+        for pos in session.exec(select(Position).where(Position.run_id == run_id)).all():
+            engine._positions[pos.symbol] = _PositionState(size=pos.size, avg_entry_price=pos.avg_entry_price)
+            if pos.size:
+                engine._last_price[pos.symbol] = pos.avg_entry_price + pos.unrealized_pnl / pos.size
+
+        return engine
 
     def _fill_price(self, side: Side, mark_price: float) -> float:
         slip = mark_price * self.slippage_bps / 10_000
@@ -142,6 +179,16 @@ class BacktestEngine:
                 self.process_signal(sig, mark_price=row.close)
             self.mark_to_market(ts, {symbol: row.close})
 
+    def step(
+        self, timestamp: datetime, symbol: str, mark_price: float, signal: Signal | None = None
+    ) -> tuple[Trade | None, Portfolio]:
+        """Process one live/paper cycle: optionally fill `signal` at
+        `mark_price`, then mark to market. Thin orchestration over
+        process_signal/mark_to_market -- no logic duplicated."""
+        trade = self.process_signal(signal, mark_price) if signal is not None else None
+        snapshot = self.mark_to_market(timestamp, {symbol: mark_price})
+        return trade, snapshot
+
     @property
     def equity_curve(self) -> list[float]:
         return [snap.equity for snap in self.portfolio_snapshots]
@@ -165,11 +212,40 @@ class BacktestEngine:
             )
         return result
 
+    def upsert_positions(self, session) -> None:
+        """Position is "current holdings," not append-only (see its
+        docstring) -- update existing rows in place rather than inserting a
+        new one every call, and drop the row once a position is fully
+        closed. This matters once an engine is resumed across multiple
+        calls (step()); Phase 2's batch run() never needed it because it
+        only ever persisted once, at the very end, with exactly one fresh
+        row per open symbol."""
+        open_symbols = {p.symbol for p in self.final_positions()}
+        for new_position in self.final_positions():
+            existing = session.exec(
+                select(Position).where(Position.run_id == self.run_id, Position.symbol == new_position.symbol)
+            ).first()
+            if existing:
+                existing.size = new_position.size
+                existing.avg_entry_price = new_position.avg_entry_price
+                existing.unrealized_pnl = new_position.unrealized_pnl
+                existing.updated_at = new_position.updated_at
+                session.add(existing)
+            else:
+                session.add(new_position)
+
+        tracked_symbols = set(self._positions.keys())
+        for symbol in tracked_symbols - open_symbols:
+            existing = session.exec(
+                select(Position).where(Position.run_id == self.run_id, Position.symbol == symbol)
+            ).first()
+            if existing:
+                session.delete(existing)
+
     def persist(self, session) -> None:
         for trade in self.trades:
             session.add(trade)
         for snapshot in self.portfolio_snapshots:
             session.add(snapshot)
-        for position in self.final_positions():
-            session.add(position)
+        self.upsert_positions(session)
         session.commit()

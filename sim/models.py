@@ -71,6 +71,24 @@ class Portfolio(SQLModel, table=True):
     drawdown: float
 
 
+class AgentDecisionLog(SQLModel, table=True):
+    """Every agent decision, whether or not it became a trade -- a "hold" has
+    no Trade row to attach reasoning to, so this is its own table. Captures
+    exactly what the agent saw (both prompts, which memories were retrieved)
+    and what it said, for the reasoning trail Phase 5+ builds on."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(index=True)
+    timestamp: datetime
+    symbol: str
+    action: str
+    trade_id: int | None = Field(default=None, foreign_key="trade.id")
+    system_prompt: str
+    user_prompt: str
+    raw_decision_json: str
+    retrieved_memory_ids: str = "[]"
+
+
 class BacktestResult(SQLModel, table=True):
     """Aggregate metrics for a completed run."""
 
