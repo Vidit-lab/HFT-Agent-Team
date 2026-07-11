@@ -49,8 +49,10 @@ def make_memory(chunk: str, **metadata) -> SimpleNamespace:
 class FakeChatCompletions:
     def __init__(self, responses: list[str]):
         self._responses = iter(responses)
+        self.calls: list[dict] = []
 
     def create(self, **kwargs):
+        self.calls.append(kwargs)
         content = next(self._responses)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
@@ -124,3 +126,18 @@ class FakeMemoryClient:
 
     def write_trade_memory(self, *_args, **_kwargs) -> str:
         return "fake-trade-memory-id"
+
+    def write_lesson(self, *_args, **_kwargs) -> str:
+        return "fake-lesson-id"
+
+
+@pytest.fixture
+def db_session(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine
+
+    from sim import models  # noqa: F401 -- registers table metadata
+
+    engine = create_engine(f"sqlite:///{tmp_path}/test.db")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        yield session

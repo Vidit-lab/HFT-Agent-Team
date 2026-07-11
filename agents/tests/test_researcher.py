@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from agents.researcher import build_prompt, research, retrieve_memories
+from agents.researcher import build_prompt, document_id, research, retrieve_memories
 from agents.schemas import MarketAnalysis, Regime, ResearchThesis, Stance
 
 from .conftest import FakeMemoryClient, make_bars, make_fake_client, make_memory
 
 _ANALYSIS = MarketAnalysis(regime=Regime.TRENDING_UP, summary="steady climb", confidence=0.8)
+
+
+def test_document_id_uses_parent_document_id_when_present():
+    # Search results are chunk-level; result.id alone is a chunk id in a
+    # different namespace from what write_lesson()/write_trade_memory()
+    # returns -- result.documents[0].id is the one that's actually traceable.
+    result = SimpleNamespace(id="chunk-abc", documents=[SimpleNamespace(id="doc-xyz")])
+    assert document_id(result) == "doc-xyz"
+
+
+def test_document_id_falls_back_to_result_id_without_documents():
+    result = make_memory("no documents field on this fake", type="lesson")
+    assert document_id(result) == result.id
 
 
 def test_build_prompt_includes_regime_and_memories():
@@ -18,19 +33,20 @@ def test_build_prompt_includes_regime_and_memories():
 
 
 def test_retrieve_memories_bull_filters_on_win_outcome():
-    memory_client = FakeMemoryClient(results_by_call=[[make_memory("a win", type="trade")]])
+    memory_client = FakeMemoryClient(results_by_call=[[make_memory("a win", type="trade")], []])
     result = retrieve_memories(memory_client, "AAPL", Stance.BULL)
 
     assert len(result.results) == 1
-    assert len(memory_client.calls) == 1
+    assert len(memory_client.calls) == 2
     assert memory_client.calls[0]["filters"]["AND"] == [
         {"key": "asset", "value": "AAPL", "filterType": "metadata"},
         {"key": "outcome", "value": "win", "filterType": "metadata"},
     ]
+    assert memory_client.calls[1]["filters"] is None
 
 
 def test_retrieve_memories_bear_filters_on_loss_outcome():
-    memory_client = FakeMemoryClient(results_by_call=[[make_memory("a loss", type="trade")]])
+    memory_client = FakeMemoryClient(results_by_call=[[make_memory("a loss", type="trade")], []])
     retrieve_memories(memory_client, "AAPL", Stance.BEAR)
 
     assert memory_client.calls[0]["filters"]["AND"][1] == {
@@ -40,7 +56,7 @@ def test_retrieve_memories_bear_filters_on_loss_outcome():
     }
 
 
-def test_retrieve_memories_falls_back_to_unfiltered_when_filtered_is_empty():
+def test_retrieve_memories_merges_filtered_and_unfiltered_results():
     memory_client = FakeMemoryClient(results_by_call=[[], [make_memory("anything", type="trade")]])
     result = retrieve_memories(memory_client, "AAPL", Stance.BULL)
 
@@ -48,6 +64,25 @@ def test_retrieve_memories_falls_back_to_unfiltered_when_filtered_is_empty():
     assert len(memory_client.calls) == 2
     assert memory_client.calls[0]["filters"] is not None
     assert memory_client.calls[1]["filters"] is None
+
+
+def test_retrieve_memories_dedupes_ids_present_in_both_queries():
+    shared = make_memory("shared", type="trade", id="mem-1")
+    only_unfiltered = make_memory("unique", type="trade", id="mem-2")
+    memory_client = FakeMemoryClient(results_by_call=[[shared], [shared, only_unfiltered]])
+    result = retrieve_memories(memory_client, "AAPL", Stance.BULL)
+
+    assert [m.id for m in result.results] == ["mem-1", "mem-2"]
+
+
+def test_retrieve_memories_caps_merged_results_at_limit():
+    filtered = [make_memory(f"f{i}", type="trade", id=f"f{i}") for i in range(3)]
+    unfiltered = [make_memory(f"u{i}", type="trade", id=f"u{i}") for i in range(3)]
+    memory_client = FakeMemoryClient(results_by_call=[filtered, unfiltered])
+    result = retrieve_memories(memory_client, "AAPL", Stance.BULL, limit=4)
+
+    assert len(result.results) == 4
+    assert [m.id for m in result.results] == ["f0", "f1", "f2", "u0"]
 
 
 def test_research_parses_valid_bull_response():
