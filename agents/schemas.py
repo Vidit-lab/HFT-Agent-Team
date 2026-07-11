@@ -47,3 +47,14 @@ class RiskDecision(BaseModel):
     approved: bool
     max_position_size: float = Field(ge=0.0, default=0.0, description="Ignored if not approved")
     reasoning: str = Field(min_length=1, max_length=1000)
+
+
+class Reflection(BaseModel):
+    """Phase 6's Reflection Agent output. Deliberately has no verdict field --
+    whether a trade won or lost is a deterministic calculation done in code
+    (see agents/reflection.py:compute_outcome), not something asked of the
+    LLM. Its job is purely to diagnose why and generalize a lesson."""
+
+    diagnosis: str = Field(min_length=1, max_length=500, description="Which node's reasoning was most responsible")
+    lesson_text: str = Field(min_length=1, max_length=500, description="A generalizable, natural-language rule")
+    confidence: float = Field(ge=0.0, le=1.0, default=0.5)

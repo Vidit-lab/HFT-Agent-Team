@@ -91,6 +91,26 @@ class AgentDecisionLog(SQLModel, table=True):
     retrieved_memory_ids: str = "[]"
 
 
+class Reflection(SQLModel, table=True):
+    """Phase 6: one row per trade the Reflection Agent has looked back on.
+    Doubles as the idempotency ledger (a trade with no Reflection row is
+    still eligible) and as the audit trail behind every LessonMemory --
+    `outcome` is a deterministic calculation (sign of realized/forward
+    return past a noise threshold), never something the LLM is asked to
+    judge; `diagnosis`/`lesson_text`/`confidence` are its structured output."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    trade_id: int = Field(foreign_key="trade.id", unique=True, index=True)
+    run_id: str = Field(index=True)
+    created_at: datetime
+    outcome: str
+    return_pct: float
+    diagnosis: str
+    lesson_text: str
+    lesson_memory_id: str
+    confidence: float
+
+
 class BacktestResult(SQLModel, table=True):
     """Aggregate metrics for a completed run."""
 
