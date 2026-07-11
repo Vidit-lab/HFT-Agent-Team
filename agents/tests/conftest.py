@@ -6,6 +6,7 @@ and retry logic without any network call. Mimics just enough of the real
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pandas as pd
@@ -13,6 +14,12 @@ import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+@pytest.fixture(autouse=True)
+def _skip_live_without_key(request):
+    if "live" in request.keywords and not os.environ.get("GROQ_API_KEY"):
+        pytest.skip("GROQ_API_KEY not set; skipping live LLM test")
 
 
 def make_bars(n: int = 25, start_price: float = 100.0) -> pd.DataFrame:
@@ -30,6 +37,13 @@ def make_bars(n: int = 25, start_price: float = 100.0) -> pd.DataFrame:
             "volume": [1_000_000] * n,
         }
     )
+
+
+def make_memory(chunk: str, **metadata) -> SimpleNamespace:
+    """A fake retrieved-memory object shaped like what SupermemoryClient.query_similar
+    returns (`.chunk`, `.metadata`, `.id`) -- used across agent node tests that need
+    to hand the LLM some retrieved memory without a real Supermemory server."""
+    return SimpleNamespace(chunk=chunk, metadata=metadata, id=metadata.get("id", "mem-1"))
 
 
 class FakeChatCompletions:
@@ -53,3 +67,60 @@ def make_fake_client(*responses: str) -> FakeClient:
 @pytest.fixture
 def fake_client():
     return make_fake_client
+
+
+class DispatchFakeClient:
+    """A fake OpenAI-shaped client that routes each `.create()` call to a
+    canned response based on a substring match against the *system* prompt,
+    rather than call order. LangGraph's parallel fan-out (Bull/Bear both run
+    in the same superstep) doesn't guarantee call order, so a plain queue
+    (see FakeClient above) isn't safe for multi-node graph tests -- this is.
+    """
+
+    def __init__(self, *, default: str | None = None):
+        self._rules: list[tuple[str, str]] = []
+        self._default = default
+        self.calls: list[dict] = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def when(self, system_prompt_substring: str, response: str) -> "DispatchFakeClient":
+        self._rules.append((system_prompt_substring, response))
+        return self
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        system = kwargs["messages"][0]["content"]
+        for substring, response in self._rules:
+            if substring in system:
+                return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=response))])
+        if self._default is not None:
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=self._default))])
+        raise AssertionError(f"DispatchFakeClient: no rule matched system prompt: {system[:200]!r}")
+
+
+@pytest.fixture
+def dispatch_fake_client():
+    return DispatchFakeClient
+
+
+class FakeMemoryClient:
+    """A fake SupermemoryClient double for graph-level tests -- returns
+    `results_by_call` in order (one list of fake memories per query_similar
+    call), so a test can script what each node's retrieval sees without a
+    real Supermemory server."""
+
+    def __init__(self, results_by_call: list[list] | None = None):
+        self._results = iter(results_by_call or [])
+        self._default: list = []
+        self.calls: list[dict] = []
+
+    def query_similar(self, q: str, *, filters=None, limit: int = 10, search_mode: str = "hybrid"):
+        self.calls.append({"q": q, "filters": filters, "limit": limit})
+        results = next(self._results, self._default)
+        return SimpleNamespace(results=results)
+
+    def write_regime_snapshot(self, *_args, **_kwargs) -> str:
+        return "fake-regime-id"
+
+    def write_trade_memory(self, *_args, **_kwargs) -> str:
+        return "fake-trade-memory-id"
