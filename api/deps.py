@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from memory.client import SupermemoryClient
 from sim.db import get_engine, init_db
-from sim.models import BacktestResult
+from sim.models import Portfolio
 
 
 @lru_cache
@@ -35,8 +35,15 @@ def get_memory_client() -> SupermemoryClient:
 
 def resolve_run_id(session: Session, run_id: str | None) -> str | None:
     """Explicit `run_id` wins; otherwise fall back to the most recently
-    created backtest run. Returns None if no run exists yet."""
+    active run. Resolved via Portfolio (not BacktestResult) because every
+    run gets a Portfolio snapshot -- batch backtests from POST /api/backtest
+    AND paper-trading runs from POST /api/run-cycle alike -- whereas
+    BacktestResult only exists for *completed* batch runs; a paper run is
+    ongoing indefinitely and never gets one. Portfolio.id (insertion order)
+    rather than .timestamp, since a batch backtest's rows carry historical
+    market-data timestamps that don't reflect when the run actually
+    happened in wall-clock time. Returns None if no run exists yet."""
     if run_id:
         return run_id
-    latest = session.exec(select(BacktestResult).order_by(BacktestResult.created_at.desc())).first()
+    latest = session.exec(select(Portfolio).order_by(Portfolio.id.desc())).first()
     return latest.run_id if latest else None

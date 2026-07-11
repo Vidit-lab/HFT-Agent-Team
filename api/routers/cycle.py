@@ -1,22 +1,47 @@
-"""POST /api/run-cycle -- an honest stub.
+"""POST /api/run-cycle -- Phase 4: the real thing, no longer a stub.
 
-Unlike /api/backtest, this genuinely can't be implemented yet: it requires
-the agent orchestrator (Phase 4), which doesn't exist. Returns 501 with a
-clear explanation rather than faking a 200.
+query memory -> agent decides -> engine executes -> ledger + memory both update.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session
+
+from agents.orchestrator import run_cycle
+from api.deps import get_memory_client, get_session
+from api.schemas import RunCycleOut, RunCycleRequest
+from memory.client import SupermemoryClient
 
 router = APIRouter(prefix="/api/run-cycle", tags=["cycle"])
 
 
-@router.post("")
-def run_cycle():
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "run-cycle requires the agent orchestrator, which doesn't exist yet "
-            "(Phase 4). Use POST /api/backtest to exercise the deterministic "
-            "engine in the meantime."
-        ),
+@router.post("", response_model=RunCycleOut)
+def run_cycle_endpoint(
+    request: RunCycleRequest,
+    session: Session = Depends(get_session),
+    memory_client: SupermemoryClient = Depends(get_memory_client),
+):
+    try:
+        result = run_cycle(
+            session,
+            memory_client,
+            symbol=request.symbol,
+            run_id=request.run_id,
+            initial_cash=request.initial_cash,
+            as_of=request.as_of,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RunCycleOut(
+        run_id=result.run_id,
+        symbol=result.symbol,
+        action=result.decision.action.value,
+        size=result.decision.size,
+        rationale=result.decision.rationale,
+        confidence=result.decision.confidence,
+        trade_id=result.trade.id if result.trade else None,
+        executed_price=result.trade.price if result.trade else None,
+        equity=result.snapshot.equity,
+        memories_considered=result.memories_considered,
+        memory_write_id=result.memory_write_id,
     )

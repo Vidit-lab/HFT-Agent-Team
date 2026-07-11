@@ -125,3 +125,24 @@ class BacktestRunOut(BaseModel):
     sharpe_ratio: float
     win_rate: float
     num_trades: int
+
+
+class RunCycleRequest(BaseModel):
+    symbol: str = "AAPL"
+    run_id: str = "paper-agent-v1"
+    initial_cash: float = 100_000.0
+    as_of: str | None = Field(default=None, description="YYYY-MM-DD, defaults to today")
+
+
+class RunCycleOut(BaseModel):
+    run_id: str
+    symbol: str
+    action: str
+    size: float
+    rationale: str
+    confidence: float
+    trade_id: int | None
+    executed_price: float | None
+    equity: float
+    memories_considered: int
+    memory_write_id: str | None
