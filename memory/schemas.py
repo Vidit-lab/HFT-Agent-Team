@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 class MemoryType(str, Enum):
     TRADE = "trade"
     LESSON = "lesson"
+    CONSOLIDATED_LESSON = "consolidated_lesson"
     REGIME_SNAPSHOT = "regime_snapshot"
     EVENT = "event"
 
@@ -112,6 +113,44 @@ class LessonMemory(MemoryRecord):
             metadata["outcome"] = self.outcome.value
         if self.source_trade_id is not None:
             metadata["source_trade_id"] = self.source_trade_id
+        return metadata
+
+
+class ConsolidatedLessonMemory(MemoryRecord):
+    """A higher-order lesson distilled by our own Consolidation Agent from a
+    group of raw LessonMemory documents sharing a (regime, outcome). Written
+    back into Supermemory as a first-class, retrievable document -- this is how
+    consolidation lands in a store that works, sidestepping the self-hosted
+    binary's own (free-tier-blocked) consolidation engine. The source document
+    ids are the connection edges; they live in sim.models.Consolidation (the
+    source of truth for the Memory Explorer graph), with just a count carried in
+    metadata here to keep metadata values scalar."""
+
+    type: MemoryType = MemoryType.CONSOLIDATED_LESSON
+
+    strategy: str
+    regime: str
+    meta_lesson: str = Field(description="The consolidated, higher-order rule")
+    outcome: Outcome | None = None
+    asset: str | None = None
+    source_count: int = Field(ge=1, description="How many raw lessons this consolidates")
+    confidence: float = 0.5
+
+    def to_content(self) -> str:
+        return self.meta_lesson
+
+    def to_metadata(self) -> dict[str, MetadataValue]:
+        metadata: dict[str, MetadataValue] = {
+            "type": self.type.value,
+            "strategy": self.strategy,
+            "regime": self.regime,
+            "source_count": self.source_count,
+            "confidence": self.confidence,
+        }
+        if self.outcome is not None:
+            metadata["outcome"] = self.outcome.value
+        if self.asset is not None:
+            metadata["asset"] = self.asset
         return metadata
 
 

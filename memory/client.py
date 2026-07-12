@@ -18,7 +18,14 @@ from supermemory.types.search_memories_params import Filters
 from supermemory.types.search_memories_response import SearchMemoriesResponse
 from supermemory.types.setting_get_response import SettingGetResponse
 
-from .schemas import EventMemory, LessonMemory, MemoryRecord, RegimeSnapshotMemory, TradeMemory
+from .schemas import (
+    ConsolidatedLessonMemory,
+    EventMemory,
+    LessonMemory,
+    MemoryRecord,
+    RegimeSnapshotMemory,
+    TradeMemory,
+)
 
 SearchMode = Literal["memories", "hybrid", "documents"]
 
@@ -82,6 +89,9 @@ class SupermemoryClient:
 
     def write_lesson(self, lesson: LessonMemory) -> str:
         return self._write(lesson)
+
+    def write_consolidated_lesson(self, consolidated: ConsolidatedLessonMemory) -> str:
+        return self._write(consolidated)
 
     def write_regime_snapshot(self, snapshot: RegimeSnapshotMemory) -> str:
         return self._write(snapshot)

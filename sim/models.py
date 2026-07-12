@@ -111,6 +111,28 @@ class Reflection(SQLModel, table=True):
     confidence: float
 
 
+class Consolidation(SQLModel, table=True):
+    """Phase 7: one row per higher-order lesson the Consolidation Agent distilled
+    from a group of raw lessons sharing a (regime, outcome). This table is the
+    source of truth for the consolidation edges the Memory Explorer graph draws
+    (`consolidated_memory_id` -> each id in `source_memory_ids`), and its
+    `group_signature` (a hash of the group's sorted source ids) is the
+    idempotency key -- a group whose exact membership was already consolidated
+    is skipped, so re-running the batch is safe."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime
+    scope: str = Field(index=True, description="run_id this batch was scoped to, or 'all'")
+    group_signature: str = Field(index=True, description="hash of the group's sorted source memory ids")
+    regime: str
+    outcome: str
+    meta_lesson: str
+    consolidated_memory_id: str
+    source_memory_ids: str = Field(default="[]", description="JSON list of the Supermemory doc ids consolidated")
+    source_count: int
+    confidence: float
+
+
 class BacktestResult(SQLModel, table=True):
     """Aggregate metrics for a completed run."""
 

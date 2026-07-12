@@ -58,3 +58,23 @@ class Reflection(BaseModel):
     diagnosis: str = Field(min_length=1, max_length=500, description="Which node's reasoning was most responsible")
     lesson_text: str = Field(min_length=1, max_length=500, description="A generalizable, natural-language rule")
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+
+
+class ConsolidatedLesson(BaseModel):
+    """One higher-order lesson the Consolidation Agent distilled from a group
+    of raw lessons. `source_indices` are 0-based positions into the exact list
+    of lessons handed to the agent in the prompt -- the loop maps them back to
+    the underlying Supermemory document ids to record the connection edges."""
+
+    meta_lesson: str = Field(min_length=1, max_length=800, description="The consolidated, higher-order rule")
+    source_indices: list[int] = Field(description="Which prompted lessons (by index) this was distilled from")
+    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+
+
+class ConsolidationOutput(BaseModel):
+    """The Consolidation Agent's full output for one group of related lessons.
+    Wrapped in an object (not a bare array) so json_object mode parses cleanly
+    -- this is exactly the object-vs-array contract Supermemory's own server-
+    side agent tripped on; we control it here."""
+
+    consolidated: list[ConsolidatedLesson] = Field(description="One or more higher-order lessons")

@@ -177,3 +177,24 @@ class ReflectionOut(BaseModel):
 class ReflectOut(BaseModel):
     reflected_count: int
     reflections: list[ReflectionOut]
+
+
+class ConsolidateRequest(BaseModel):
+    scope: str = Field(default="all", description="Label for this batch (e.g. a run_id); recorded on each row")
+    min_group_size: int = Field(default=2, ge=2, description="Min raw lessons in a (regime, outcome) bucket to consolidate")
+    max_groups: int = Field(default=20, ge=1, le=100)
+
+
+class ConsolidationOut(BaseModel):
+    consolidated_memory_id: str
+    regime: str
+    outcome: str
+    meta_lesson: str
+    source_memory_ids: list[str]
+    source_count: int
+    confidence: float
+
+
+class ConsolidateOut(BaseModel):
+    consolidated_count: int
+    consolidations: list[ConsolidationOut]

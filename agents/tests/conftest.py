@@ -105,21 +105,34 @@ def dispatch_fake_client():
     return DispatchFakeClient
 
 
+def make_document(id: str, content: str, **metadata) -> SimpleNamespace:
+    """A fake document shaped like what SupermemoryClient.list_documents returns
+    (`.id`, `.content`, `.metadata`) -- used by consolidation-loop tests."""
+    return SimpleNamespace(id=id, content=content, metadata=metadata)
+
+
 class FakeMemoryClient:
     """A fake SupermemoryClient double for graph-level tests -- returns
     `results_by_call` in order (one list of fake memories per query_similar
     call), so a test can script what each node's retrieval sees without a
-    real Supermemory server."""
+    real Supermemory server. `documents` scripts what list_documents returns
+    (for consolidation tests)."""
 
-    def __init__(self, results_by_call: list[list] | None = None):
+    def __init__(self, results_by_call: list[list] | None = None, documents: list | None = None):
         self._results = iter(results_by_call or [])
         self._default: list = []
+        self._documents = documents or []
         self.calls: list[dict] = []
+        self.consolidated_writes: list = []
+        self._consolidated_counter = 0
 
     def query_similar(self, q: str, *, filters=None, limit: int = 10, search_mode: str = "hybrid"):
         self.calls.append({"q": q, "filters": filters, "limit": limit})
         results = next(self._results, self._default)
         return SimpleNamespace(results=results)
+
+    def list_documents(self, limit: int = 50, include_content: bool = True):
+        return SimpleNamespace(memories=self._documents)
 
     def write_regime_snapshot(self, *_args, **_kwargs) -> str:
         return "fake-regime-id"
@@ -129,6 +142,11 @@ class FakeMemoryClient:
 
     def write_lesson(self, *_args, **_kwargs) -> str:
         return "fake-lesson-id"
+
+    def write_consolidated_lesson(self, consolidated) -> str:
+        self.consolidated_writes.append(consolidated)
+        self._consolidated_counter += 1
+        return f"fake-consolidated-id-{self._consolidated_counter}"
 
 
 @pytest.fixture
