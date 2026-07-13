@@ -1,6 +1,6 @@
 <div align="center">
 
-# AlphaMemoir
+# AlphaMemoir <img width="32" height="32" alt="image" src="https://github.com/user-attachments/assets/6aa7fd1c-7aff-4b4f-9fc3-3dbcc4bd200c" />
 
 ### A trading brain that remembers why it was wrong.
 
