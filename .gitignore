@@ -17,9 +17,9 @@ venv/
 # Supermemory local data
 .supermemory/
 
-# Simulation data / caches
-data/*.parquet
-data/*.db
+# Simulation data / caches -- all of it is regenerable from the exchange/yfinance.
+# (Includes data/ccxt/, the last-good snapshots the live chart falls back on.)
+data/
 *.db
 *.sqlite
 *.sqlite3

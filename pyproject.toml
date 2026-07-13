@@ -1,7 +1,7 @@
 [project]
-name = "trading-brain"
-version = "0.1.0"
-description = "Memory-centric, self-improving multi-agent trading system built on Supermemory"
+name = "alphamemoir"
+version = "1.0.0"
+description = "A memory-native, self-improving multi-agent trading system built on Supermemory"
 requires-python = ">=3.11"
 dependencies = [
     "supermemory>=3.50.0",
@@ -11,6 +11,7 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=17.0",
     "yfinance>=0.2.43",
+    "ccxt>=4.4",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "openai>=1.50",

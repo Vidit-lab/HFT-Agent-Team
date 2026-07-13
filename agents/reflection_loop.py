@@ -23,10 +23,14 @@ from agents.reflection import compute_outcome, reflect
 from memory.client import SupermemoryClient
 from memory.schemas import LessonMemory
 from sim.data_loader import load_ohlcv
+from sim.market_data import get_bars, is_crypto
 from sim.models import AgentDecisionLog, Reflection, Trade
 
 DEFAULT_MAX_TRADES = 10
-DEFAULT_LOOKBACK_DAYS = 5
+# Days a still-open trade must age before its forward return is judged. On 1h
+# crypto bars a position matures in hours, not days, so callers routinely pass a
+# fraction (0.1667 == 4h) -- hence float, not int.
+DEFAULT_LOOKBACK_DAYS = 5.0
 _PRICE_LOOKUP_BUFFER_DAYS = 10
 
 
@@ -43,7 +47,7 @@ class ReflectionResult:
 
 
 def _find_eligible_trades(
-    session: Session, *, run_id: str | None, max_trades: int, lookback_days: int, as_of_date: datetime
+    session: Session, *, run_id: str | None, max_trades: int, lookback_days: float, as_of_date: datetime
 ) -> list[Trade]:
     already_reflected = select(Reflection.trade_id)
     query = select(Trade).where(Trade.id.not_in(already_reflected))
@@ -60,9 +64,24 @@ def _find_eligible_trades(
     return eligible[:max_trades]
 
 
-def _latest_close(symbol: str, as_of: str, cache_dir: str = "data") -> float:
-    start = (datetime.fromisoformat(as_of) - timedelta(days=_PRICE_LOOKUP_BUFFER_DAYS)).date().isoformat()
-    bars = load_ohlcv(symbol, start, as_of, cache_dir=cache_dir)
+def _latest_close(symbol: str, as_of: str) -> float:
+    """The price a still-open trade is marked against.
+
+    The two asset classes want genuinely different things here, so they fork:
+
+    * **Crypto** -- the latest live bar. `as_of` is meaningless on a 24/7 feed we
+      always fetch right up to now, and "the price this instant" is exactly the
+      forward return we want to diagnose.
+    * **Equity** -- the last bar at or before `as_of`, so a backdated reflect run
+      is still judged against the price as it actually stood on that date rather
+      than against today's.
+    """
+    if is_crypto(symbol):
+        bars = get_bars(symbol, limit=2)
+    else:
+        start = (datetime.fromisoformat(as_of) - timedelta(days=_PRICE_LOOKUP_BUFFER_DAYS)).date().isoformat()
+        bars = load_ohlcv(symbol, start, as_of)
+
     if bars.empty:
         raise ValueError(f"no market data for {symbol} to evaluate a still-open trade as of {as_of}")
     return float(bars.iloc[-1].close)
@@ -74,7 +93,7 @@ def run_reflection_batch(
     *,
     run_id: str | None = None,
     max_trades: int = DEFAULT_MAX_TRADES,
-    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    lookback_days: float = DEFAULT_LOOKBACK_DAYS,
     as_of: str | None = None,
     llm_client=None,
 ) -> list[ReflectionResult]:

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
@@ -24,12 +23,15 @@ from memory.schemas import Outcome as MemoryOutcome
 from memory.schemas import RegimeSnapshotMemory
 from memory.schemas import Side as MemorySide
 from memory.schemas import TradeMemory
-from sim.data_loader import load_ohlcv
 from sim.engine import BacktestEngine
+from sim.market_data import DEFAULT_TIMEFRAME, get_bars
 from sim.models import AgentDecisionLog, Portfolio, Position, Side as SimSide, Signal, Trade
 
 DEFAULT_RUN_ID = "paper-agent-v1"
-DEFAULT_LOOKBACK_DAYS = 180
+DEFAULT_SYMBOL = "BTC/USDT"
+# 500 x 1h ~= 20 days of context. The Market Analyst only ever looks at the last
+# 20 bars; the rest is headroom for a wider lookback without a refetch.
+DEFAULT_BAR_LIMIT = 500
 
 
 @dataclass
@@ -50,17 +52,15 @@ def run_cycle(
     session: Session,
     memory_client: SupermemoryClient,
     *,
-    symbol: str = "AAPL",
+    symbol: str = DEFAULT_SYMBOL,
+    timeframe: str = DEFAULT_TIMEFRAME,
     run_id: str = DEFAULT_RUN_ID,
     initial_cash: float = 100_000.0,
-    as_of: str | None = None,
     llm_client=None,
 ) -> CycleResult:
-    end = as_of or datetime.now(timezone.utc).date().isoformat()
-    start = (datetime.fromisoformat(end) - timedelta(days=DEFAULT_LOOKBACK_DAYS)).date().isoformat()
-    bars = load_ohlcv(symbol, start, end)
+    bars = get_bars(symbol, timeframe=timeframe, limit=DEFAULT_BAR_LIMIT)
     if bars.empty:
-        raise ValueError(f"no market data for {symbol} between {start} and {end}")
+        raise ValueError(f"no market data for {symbol} ({timeframe})")
 
     existing_position = session.exec(
         select(Position).where(Position.run_id == run_id, Position.symbol == symbol)
