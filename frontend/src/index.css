@@ -1,0 +1,184 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* AlphaMemoir — dark by default. The viewer's toggle sets `.light` on <html>. */
+@custom-variant light (&:where(.light, .light *));
+
+:root {
+  /* ── Brand palette (the five blues) ───────────────────────────── */
+  --am-navy: #05203e;
+  --am-deep: #023e77;
+  --am-blue: #0983c8;
+  --am-cyan: #5acaf9;
+  --am-pale: #badeef;
+
+  /* ── Semantic, reserved — never used as the accent ────────────── */
+  --am-gain: #21c197;
+  --am-loss: #f0616d;
+  --am-warn: #e6b23a;
+
+  /* ── Agent identity hues (orchestration + graph) ──────────────── */
+  --am-analyst: #5acaf9;
+  --am-bull: #21c197;
+  --am-bear: #f0616d;
+  --am-risk: #e6b23a;
+  --am-trader: #0983c8;
+  --am-pm: #9a7cf0;
+  --am-reflect: #e08b79;
+  --am-consolidate: #4fb8ae;
+
+  /* ── DARK theme semantic tokens (default) ─────────────────────── */
+  --bg: #041629;
+  --bg-grid: rgba(90, 202, 249, 0.045);
+  --surface: #0a2340;
+  --surface-2: #0e2c4e;
+  --surface-3: #123457;
+  --border: #17406a;
+  --border-strong: #1f5488;
+  --text: #eaf3fb;
+  --text-muted: #86a9c8;
+  --text-faint: #5c7ea0;
+  --accent: #159de0;
+  --accent-hover: #3cb0ec;
+  --accent-contrast: #ffffff;
+  --glow: rgba(90, 202, 249, 0.16);
+  --shadow: 0 10px 40px -12px rgba(0, 0, 0, 0.55);
+  --ring: rgba(90, 202, 249, 0.55);
+}
+
+:root:where(.light, .light *),
+.light {
+  --bg: #eef5fb;
+  --bg-grid: rgba(9, 131, 200, 0.05);
+  --surface: #ffffff;
+  --surface-2: #f3f8fc;
+  --surface-3: #e7f1f9;
+  --border: #d3e3f0;
+  --border-strong: #b9d3e8;
+  --text: #072542;
+  --text-muted: #52748f;
+  --text-faint: #7c98af;
+  --accent: #0983c8;
+  --accent-hover: #0a72af;
+  --accent-contrast: #ffffff;
+  --glow: rgba(9, 131, 200, 0.12);
+  --shadow: 0 10px 30px -14px rgba(6, 37, 64, 0.25);
+  --ring: rgba(9, 131, 200, 0.5);
+}
+
+/* Map semantic tokens to Tailwind utilities (bg-surface, text-muted, …). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-navy: var(--am-navy);
+  --color-deep: var(--am-deep);
+  --color-blue: var(--am-blue);
+  --color-cyan: var(--am-cyan);
+  --color-pale: var(--am-pale);
+
+  --color-gain: var(--am-gain);
+  --color-loss: var(--am-loss);
+  --color-warn: var(--am-warn);
+
+  --color-analyst: var(--am-analyst);
+  --color-bull: var(--am-bull);
+  --color-bear: var(--am-bear);
+  --color-risk: var(--am-risk);
+  --color-trader: var(--am-trader);
+  --color-pm: var(--am-pm);
+  --color-reflect: var(--am-reflect);
+  --color-consolidate: var(--am-consolidate);
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  --radius-card: 14px;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Ambient blue grid + top glow — the "network" atmosphere from the reference. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 75%);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Tabular numerics for anything where digits must align. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Reusable surface card. */
+.am-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}

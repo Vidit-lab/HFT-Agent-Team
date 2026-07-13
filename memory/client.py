@@ -107,11 +107,17 @@ class SupermemoryClient:
         limit: int = 10,
         search_mode: SearchMode = DEFAULT_SEARCH_MODE,
     ) -> SearchMemoriesResponse:
+        """Always requests `include={"documents": True}`: a search result's own
+        `.id` is a CHUNK id, which lives in a different namespace from the
+        document id and 404s against `get_document`. Only with this flag does
+        each result carry its parent document, which is what every caller
+        actually wants to cite or open (see agents.researcher.document_id)."""
         kwargs: dict[str, Any] = {
             "q": q,
             "container_tag": self.container_tag,
             "limit": limit,
             "search_mode": search_mode,
+            "include": {"documents": True},
         }
         if filters is not None:
             kwargs["filters"] = filters
@@ -146,3 +152,16 @@ class SupermemoryClient:
 
     def get_document(self, document_id: str) -> DocumentGetResponse:
         return self._sdk.documents.get(id=document_id)
+
+    def delete_document(self, document_id: str) -> bool:
+        """Remove a document. Returns False if it was already gone.
+
+        Only the demo reset needs this -- the trading loop is append-only, and a
+        lesson is never retracted once learned. Swallowing the not-found case
+        keeps reset idempotent: a judge can hit it twice without an error.
+        """
+        try:
+            self._sdk.documents.delete(id=document_id)
+            return True
+        except Exception:
+            return False
