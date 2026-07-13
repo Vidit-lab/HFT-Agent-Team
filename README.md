@@ -178,6 +178,8 @@ source lessons. Each decision logs the IDs of the memories it retrieved.
                                    └────────cited_by────────► a later trade's debate
 ```
 
+<img width="830" height="638" alt="image" src="https://github.com/user-attachments/assets/6ab6a2a8-8dc2-4282-beb2-45666d81808f" />
+
 The learning loop is not asserted on a slide. **It is a queryable edge in a graph**, rendered live
 in the Memory Explorer.
 
