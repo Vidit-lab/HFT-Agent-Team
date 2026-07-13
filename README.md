@@ -181,13 +181,6 @@ source lessons. Each decision logs the IDs of the memories it retrieved.
 The learning loop is not asserted on a slide. **It is a queryable edge in a graph**, rendered live
 in the Memory Explorer.
 
-> **A note on honesty.** Supermemory's self-hosted *server-side* memory-agent (its own consolidation
-> pass) requires an LLM tier we don't have on the free plan, so we don't depend on it. We built
-> **our own Consolidation Agent** instead and write the meta-lessons back into Supermemory as
-> first-class, retrievable documents. We use Supermemory for exactly what it is excellent at —
-> storage, embeddings, chunking, hybrid retrieval, metadata filtering — and we own the reasoning.
-> Every claim in this README was verified against the running system.
-
 ---
 
 ## 4. Tech stack, system analysis & applications
