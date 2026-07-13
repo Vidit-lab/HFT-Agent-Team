@@ -9,14 +9,17 @@ function apply(theme: Theme) {
   root.classList.toggle('light', theme === 'light')
 }
 
+/** Light is the default. A saved preference always wins over it. */
+const DEFAULT_THEME: Theme = 'light'
+
 export function initTheme(): Theme {
-  const saved = (localStorage.getItem(KEY) as Theme | null) ?? 'dark'
+  const saved = (localStorage.getItem(KEY) as Theme | null) ?? DEFAULT_THEME
   apply(saved)
   return saved
 }
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(KEY) as Theme | null) ?? 'dark')
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(KEY) as Theme | null) ?? DEFAULT_THEME)
 
   useEffect(() => {
     apply(theme)
