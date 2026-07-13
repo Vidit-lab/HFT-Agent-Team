@@ -97,8 +97,23 @@ def run_reflection_batch(
     as_of: str | None = None,
     llm_client=None,
 ) -> list[ReflectionResult]:
-    as_of = as_of or datetime.now(timezone.utc).date().isoformat()
-    as_of_date = datetime.fromisoformat(as_of)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Two different clocks, deliberately.
+    #
+    # `as_of_date` judges ELIGIBILITY, and when the caller hasn't pinned a date it
+    # must be the actual wall clock -- not midnight. Collapsing "now" to a date was
+    # harmless when every trade carried a daily bar's midnight timestamp, but an
+    # hourly crypto bar is stamped 12:00 or 17:00, and midnight-today is *before*
+    # those. The result: a trade placed today could never be reflected on, even at
+    # lookback_days=0, and GET /reflect/pending (which compares against the real
+    # clock) would insist it was eligible while POST /reflect quietly wrote nothing.
+    #
+    # `as_of_str` is a DATE because it only feeds the equity price lookup, where
+    # load_ohlcv takes YYYY-MM-DD. An explicit `as_of` still means midnight on that
+    # date -- that's the backdated-replay semantic, and it stays intact.
+    as_of_date = datetime.fromisoformat(as_of) if as_of else now
+    as_of_str = as_of or now.date().isoformat()
 
     eligible = _find_eligible_trades(
         session, run_id=run_id, max_trades=max_trades, lookback_days=lookback_days, as_of_date=as_of_date
@@ -111,7 +126,7 @@ def run_reflection_batch(
         current_price = None
         if trade.realized_pnl is None:
             if trade.symbol not in price_cache:
-                price_cache[trade.symbol] = _latest_close(trade.symbol, as_of)
+                price_cache[trade.symbol] = _latest_close(trade.symbol, as_of_str)
             current_price = price_cache[trade.symbol]
 
         outcome, return_pct = compute_outcome(trade, current_price)
