@@ -17,10 +17,11 @@ import json
 from openai import OpenAI
 from pydantic import ValidationError
 
+from agents.limits import MAX_POSITION_PCT_OF_EQUITY, max_affordable_units
 from agents.llm import DEFAULT_MODEL, complete_json, get_client
 from agents.schemas import Action, TradeDecision
 
-MAX_POSITION_PCT_OF_EQUITY = 0.25
+__all__ = ["MAX_POSITION_PCT_OF_EQUITY", "build_prompt", "finalize"]
 
 SYSTEM_PROMPT = """You are the Portfolio Manager for a paper-trading system -- the final sign-off \
 before a trade executes. The Trader has proposed a decision; your job is to confirm it or shrink \
@@ -58,8 +59,7 @@ def _hard_cap_size(action: Action, proposed_size: float, current_price: float, e
     concentration risk this guards against."""
     if action != Action.BUY or current_price <= 0:
         return float(proposed_size)
-    max_units = (equity * MAX_POSITION_PCT_OF_EQUITY) / current_price
-    return float(min(proposed_size, max_units))
+    return float(min(proposed_size, max_affordable_units(equity, current_price)))
 
 
 def finalize(

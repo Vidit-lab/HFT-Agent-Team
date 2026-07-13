@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Action(str, Enum):
@@ -16,6 +16,15 @@ class TradeDecision(BaseModel):
     size: float = Field(ge=0, description="Units to buy/sell; 0 if holding")
     rationale: str = Field(min_length=1, max_length=1000)
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+
+    @model_validator(mode="after")
+    def _hold_has_no_size(self):
+        # "0 if holding" was only ever a description, so the model could return
+        # {"action": "hold", "size": 200} -- which then got logged and rendered as
+        # "HOLD 200.00". The action is authoritative; a held position has no size.
+        if self.action == Action.HOLD and self.size != 0:
+            self.size = 0.0
+        return self
 
 
 class Regime(str, Enum):

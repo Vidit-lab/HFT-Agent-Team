@@ -91,3 +91,15 @@ def test_decide_with_real_llm_returns_well_formed_decision():
     assert decision.size >= 0
     assert decision.rationale
     assert 0.0 <= decision.confidence <= 1.0
+
+
+def test_build_prompt_tells_a_flat_trader_that_sell_is_unavailable():
+    """The crash this prevents: with a flat book and a strong bear thesis, the
+    model proposes a short, the guard rejects it, and it burns every retry
+    re-proposing the same illegal move -- taking the whole cycle down with it."""
+    flat = build_prompt("BTC/USDT", make_bars(), _ANALYSIS, _BULL, _BEAR, _RISK_APPROVED, 0.0)
+    assert "SELL is NOT available" in flat
+
+    held = build_prompt("BTC/USDT", make_bars(), _ANALYSIS, _BULL, _BEAR, _RISK_APPROVED, 2.5)
+    assert "sell at most 2.5 units" in held
+    assert "cannot go short" in held

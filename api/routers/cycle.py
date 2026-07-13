@@ -25,12 +25,19 @@ def run_cycle_endpoint(
             session,
             memory_client,
             symbol=request.symbol,
+            timeframe=request.timeframe,
             run_id=request.run_id,
             initial_cash=request.initial_cash,
-            as_of=request.as_of,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # A node exhausted its retries without producing a valid decision. That's
+        # a live-LLM failure, not a bug in the request -- surface it as such
+        # rather than leaking a 500 and a stack trace into the UI.
+        raise HTTPException(
+            status_code=502, detail=f"An agent could not produce a valid decision: {exc}"
+        ) from exc
 
     return RunCycleOut(
         run_id=result.run_id,

@@ -88,6 +88,7 @@ def _risk_manager_node(client: OpenAI, model: str):
             state["bear_thesis"],
             state["current_position_size"],
             state["equity"],
+            state["current_price"],
             client=client,
             model=model,
         )
@@ -100,8 +101,18 @@ def _risk_manager_node(client: OpenAI, model: str):
 
 
 def _route_after_risk(state: AgentState) -> str:
+    """A veto blocks NEW exposure -- it must not trap an existing position.
+
+    Short-circuiting a veto straight to HOLD means a book that is already long
+    can never be reduced or closed on the very cycles where risk is loudest,
+    which is exactly backwards. So if we hold something, the Trader still runs;
+    the veto reaches it as `max_position_size == 0`, and since the size cap now
+    applies only to BUY, the Trader's remaining legal moves are sell or hold.
+    """
     decision: RiskDecision = state["risk_decision"]
-    return "trader" if decision.approved else "hold"
+    if decision.approved:
+        return "trader"
+    return "trader" if state["current_position_size"] > 0 else "hold"
 
 
 def _trader_node(client: OpenAI, model: str):

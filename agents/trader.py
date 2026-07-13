@@ -24,8 +24,17 @@ market regime. Respond with ONLY a JSON object matching this schema, no other te
 {"action": "buy" | "sell" | "hold", "size": number (0 if holding), "rationale": string \
 (1-3 sentences), "confidence": number between 0 and 1}
 
-You may never propose a size greater than the Risk Manager's max_position_size. You may never sell \
-more than the current position size. Be conservative: default to "hold" when the Bull and Bear \
+Rules. "buy" may never exceed the Risk Manager's max_position_size. "sell" may never exceed the \
+current position size (this system is long-only -- you cannot go short). "hold" must have size 0.
+
+On what "hold" actually means: it means KEEPING the exposure you already have, so it is only the \
+safe choice when you are flat. If you already hold a position and the Bear thesis outweighs the \
+Bull, or the regime has turned against the position, then holding IS an active risk decision -- \
+"sell" is the risk-reducing action, and you should take it, either trimming the position or \
+closing it entirely. Do not sit in a losing position simply because selling feels like a bigger \
+move than doing nothing.
+
+Be conservative about OPENING exposure: default to "hold" when you are flat and the Bull and Bear \
 theses are evenly matched or both low-confidence."""
 
 
@@ -47,7 +56,16 @@ def build_prompt(
         f"Risk Manager's max position size this cycle: {risk_decision.max_position_size} "
         f"({risk_decision.reasoning})\n"
         f"Current position size in {symbol}: {current_position_size}\n"
-        f"Decide: buy, sell, or hold."
+        # This system is long-only: you can only sell what you already hold.
+        # Spelling that out here rather than leaving the model to infer it from
+        # "position: 0.0" is what stops it proposing a short, being rejected by
+        # the guard below, and burning all its retries on the same illegal move.
+        + (
+            "You hold nothing, so SELL is NOT available this cycle -- choose buy or hold.\n"
+            if current_position_size <= 0
+            else f"You may sell at most {current_position_size} units (you cannot go short).\n"
+        )
+        + "Decide: buy, sell, or hold."
     )
 
 
@@ -79,9 +97,15 @@ def decide(
                 raise ValueError(
                     f"sell size {decision.size} exceeds current position size {current_position_size}"
                 )
-            if decision.action.value != "hold" and decision.size > risk_decision.max_position_size:
+            # The Risk Manager's envelope governs NEW exposure -- that is what its
+            # own prompt asks it for. Applying it to a sell would cap an exit by a
+            # concentration limit and could trap a position: hold 500 units under a
+            # 218-unit cap and you could never fully close. A sell is already bounded
+            # by the position itself, just above. (portfolio_manager._hard_cap_size
+            # makes the same distinction.)
+            if decision.action.value == "buy" and decision.size > risk_decision.max_position_size:
                 raise ValueError(
-                    f"size {decision.size} exceeds Risk Manager's max_position_size "
+                    f"buy size {decision.size} exceeds Risk Manager's max_position_size "
                     f"{risk_decision.max_position_size}"
                 )
             return decision, SYSTEM_PROMPT, user_prompt
